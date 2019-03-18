@@ -1,0 +1,77 @@
+<html>
+<head>
+	<meta charset='utf-8'>
+    <title>实时地图应用</title>
+    <link rel="stylesheet" href="http://openlayers.org/en/v3.18.2/css/ol.css" type="text/css">
+    <script src="http://openlayers.org/en/v3.18.2/build/ol.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+			var wktform=new ol.format.WKT();//wkt解析
+			var gpsSource=new ol.source.Vector();
+			function init(){
+				var gpsLayer=new ol.layer.Vector({
+					source:gpsSource,
+					style:new ol.style.Style({
+						image: new ol.style.Icon(({
+							anchor: [0.5, 1],
+							src: 'http://openlayers.org/en/v3.18.2/examples/data/icon.png'
+						}))
+					})
+				});
+				var map = new ol.Map({
+					layers : [
+						new ol.layer.Tile({
+							title : '街道图',
+							visible : true,
+							source : new ol.source.XYZ({
+								url : 'http://www.google.cn/maps/vt?pb=!1m5!1m4!1i{z}!2i{x}!3i{y}!4i256!2m3!1e0!2sm!3i342009817!3m9!2szh-CN!3sCN!5e18!12m1!1e47!12m3!1e37!2m1!1ssmartmaps!4e0&token=32965'
+							})
+						}),
+						gpsLayer
+					],
+					target : 'map',
+					controls : ol.control.defaults({
+						attributionOptions :
+						({
+							collapsible : false
+						})
+					}),
+					view : new ol.View({
+						center : [0, 0],
+						zoom : 2
+					})
+				});
+				var iosocket = io.connect();
+				//接受服务端消息
+				iosocket.on('GPSCoor', function(data) {
+					data=JSON.parse(data);
+					switch(data.tg_op){
+						case 'INSERT':
+							var feature=new ol.Feature({
+								geometry:wktform.readGeometry(data.geom)
+							});
+							feature.setId(data.id);
+							gpsSource.addFeature(feature);//地图新增点
+							break;
+						case 'UPDATE':
+							var geom=wktform.readGeometry(data.geom);
+							var feature=gpsSource.getFeatureById(data.id);
+							if(feature)
+								feature.setGeometry(geom);//修改已有点
+							break;
+						case 'DELETE':
+							var feature=gpsSource.getFeatureById(data.id);
+							if(feature)
+								gpsSource.removeFeature(feature);//删除点
+							break;
+					}
+				});
+			}
+
+
+    </script>
+</head>
+<body onload="init()">
+    <div id="map"></div>
+</body>
+</html>

@@ -1,0 +1,38 @@
+create table t_gps(
+          id int not null,
+          geom geometry(Point,4326),
+          constraint t_gps_pkey primary key (id)
+);
+--建立索引
+create index t_gps_geom_idx on t_gps using gist(geom);
+
+create table t_cluster(
+	kinds int not null,
+	geom geometry(Point,4326)
+);
+
+CREATE OR REPLACE FUNCTION process_t_gps() RETURNS TRIGGER AS $body$
+	DECLARE
+		rec record;
+    BEGIN
+        IF (TG_OP = 'DELETE') THEN
+        	--插入的GPS都是4326的经纬度，我们将在3857的谷歌底图上显示数据，发送转换后的3857出去
+            select TG_OP TG_OP,OLD.id,ST_AsText(ST_Transform(OLD.geom,3857)) geom into rec;
+			perform pg_notify('gps',row_to_json(rec)::text);
+            RETURN OLD;
+        ELSIF (TG_OP = 'UPDATE') THEN
+            select TG_OP TG_OP,NEW.id,ST_AsText(ST_Transform(NEW.geom,3857)) geom into rec;
+			perform pg_notify('gps',row_to_json(rec)::text);
+            RETURN NEW;
+        ELSIF (TG_OP = 'INSERT') THEN
+        	select TG_OP TG_OP,NEW.id,ST_AsText(ST_Transform(NEW.geom,3857)) geom into rec;
+			perform pg_notify('gps',row_to_json(rec)::text);
+            RETURN NEW;
+        END IF;
+        RETURN NULL;
+    END;
+$body$ LANGUAGE plpgsql;
+
+CREATE TRIGGER T_GPS_TRIGGER
+AFTER INSERT OR UPDATE OR DELETE ON T_GPS
+    FOR EACH ROW EXECUTE PROCEDURE process_t_gps();
